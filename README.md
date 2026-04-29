@@ -1,4 +1,3 @@
-cat > README.md << 'EOF'
 # Automated File Analysis Tool for Windows Digital Forensics
 
 **Student:** Muhammad Awais Ali  
@@ -37,3 +36,18 @@ python3 main.py
 5. Export a full PDF report from **Export Report**
 
 ## Project Structure
+
+src/
+├── signature_analyzer.py      # Magic byte detection
+├── entropy_calculator.py      # Shannon entropy analysis
+├── hash_verifier.py           # MD5 hash & duplicate detection
+├── metadata_parser.py         # Metadata extraction & analysis
+├── forensic_intelligence.py   # Risk scoring engine
+├── visualizer.py              # Matplotlib chart generation
+├── report_generator.py        # ReportLab PDF generation
+└── gui/                       # CustomTkinter interface
+├── app.py
+├── sidebar.py
+├── theme.py
+├── panels/
+└── widgets/
