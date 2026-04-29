@@ -36,7 +36,7 @@ python3 main.py
 5. Export a full PDF report from **Export Report**
 
 ## Project Structure
-
+```text
 src/
 ├── signature_analyzer.py      # Magic byte detection
 ├── entropy_calculator.py      # Shannon entropy analysis
@@ -46,8 +46,9 @@ src/
 ├── visualizer.py              # Matplotlib chart generation
 ├── report_generator.py        # ReportLab PDF generation
 └── gui/                       # CustomTkinter interface
-├── app.py
-├── sidebar.py
-├── theme.py
-├── panels/
-└── widgets/
+    ├── app.py
+    ├── sidebar.py
+    ├── theme.py
+    ├── panels/
+    └── widgets/
+```
