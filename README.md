@@ -37,18 +37,55 @@ python3 main.py
 
 ## Project Structure
 ```text
-src/
-├── signature_analyzer.py      # Magic byte detection
-├── entropy_calculator.py      # Shannon entropy analysis
-├── hash_verifier.py           # MD5 hash & duplicate detection
-├── metadata_parser.py         # Metadata extraction & analysis
-├── forensic_intelligence.py   # Risk scoring engine
-├── visualizer.py              # Matplotlib chart generation
-├── report_generator.py        # ReportLab PDF generation
-└── gui/                       # CustomTkinter interface
-    ├── app.py
-    ├── sidebar.py
-    ├── theme.py
-    ├── panels/
-    └── widgets/
+ForensicFileAnalyzer/
+├── reports/
+│   ├── graphs/
+│   │   ├── detection_summary.png
+│   │   ├── entropy_histogram.png
+│   │   └── timeline_chart.png
+│   ├── file_hashes.csv
+│   ├── forensic_analysis_complete.pdf
+│   └── forensic_analysis_report.pdf
+│
+├── src/
+│   ├── __pycache__/
+│   ├── gui/
+|   |    ├── panels/
+│   |    |      ├── __init__.py
+│   |    |      ├── analysis_panel.py
+│   |    |      ├── home_panel.py
+│   |    |      ├── report_panel.py
+│   |    |      └── results_panel.py
+│   |    |
+|   |    ├── widgets/
+│   |    |      ├── __init__.py
+│   |    |      ├── file_table.py
+│   |    |      ├── progress_bar.py
+│   |    |      └── stat_card.py
+│   |    |
+|   |    ├── __init__.py
+|   |    ├── app.py
+|   |    ├── sidebar.py
+|   |    └── theme.py
+│   ├── __init__.py
+│   ├── entropy_calculator.py
+│   ├── forensic_intelligence.py
+│   ├── hash_verifier.py
+│   ├── main.py
+│   ├── metadata_parser.py
+│   ├── report_generator.py
+│   ├── signature_analyzer.py
+│   └── visualizer.py
+│
+├── tests/
+│   ├── advanced_scenarios/
+│   ├── realistic_dataset/
+│   └── test_files/
+│
+├── .gitignore
+├── create_advanced_tests.py
+├── create_test_files.py
+├── generate_realistic_dataset.py
+├── main.py
+└── README.md
 ```
