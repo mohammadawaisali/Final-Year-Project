@@ -819,6 +819,8 @@ class ReportGenerator:
     # ═══════════════════════════════════════════════════════════════════════════
     def _hash_section(self, results):
         content = []
+
+        # ── Duplicate detection (unchanged) ──────────────────────────────
         hash_map = {}
         for r in results:
             md5 = r.get('md5')
@@ -826,30 +828,235 @@ class ReportGenerator:
                 hash_map.setdefault(md5, []).append(r)
         duplicates = {k: v for k, v in hash_map.items() if len(v) > 1}
 
+        # ── VirusTotal counts (new) ───────────────────────────────────────
+        vt_checked    = [r for r in results
+                         if r.get('vt_verdict') not in (None, 'SKIPPED', 'ERROR')]
+        vt_malicious  = [r for r in vt_checked if r.get('vt_verdict') == 'MALICIOUS']
+        vt_suspicious = [r for r in vt_checked if r.get('vt_verdict') == 'SUSPICIOUS']
+        vt_was_run    = len(vt_checked) > 0
+
+        # ── Section banner ────────────────────────────────────────────────
+        subtitle = (f'{len(duplicates)} duplicate set(s) identified'
+                    + (f'  ·  {len(vt_malicious)} VT malicious' if vt_was_run else ''))
         content.extend(self._section_banner(
-            'HASH VERIFICATION & DUPLICATE DETECTION',
-            f'{len(duplicates)} duplicate set(s) identified'))
+            'HASH VERIFICATION & DUPLICATE DETECTION', subtitle))
 
         content.extend(self._info_box(
-            'Cryptographic hash values (MD5 and SHA-256) serve as unique file '
-            'fingerprints. Files sharing an identical hash are byte-for-byte identical, '
-            'regardless of filename or location. The presence of unexplained duplicates '
-            'may indicate data staging, unauthorised copying, or exfiltration activity.', 'teal'))
+            'Cryptographic hash values (MD5, SHA-1, and SHA-256) serve as unique '
+            'file fingerprints. Files sharing an identical hash are byte-for-byte '
+            'identical regardless of filename or location. Each file is additionally '
+            'cross-referenced against the VirusTotal threat intelligence database '
+            'where the API key is configured.',
+            'teal'))
+
+        # ═════════════════════════════════════════════════════════════════
+        # PART A — THREAT INTELLIGENCE (VirusTotal)
+        # ═════════════════════════════════════════════════════════════════
+        if vt_was_run:
+            content.append(Paragraph(
+                '<b>Threat Intelligence — VirusTotal API Results</b>',
+                self.styles['SubHeader']))
+
+            # VT summary KPI row
+            vt_clean   = len([r for r in vt_checked if r.get('vt_verdict') == 'CLEAN'])
+            vt_unknown = len([r for r in vt_checked if r.get('vt_verdict') == 'UNKNOWN'])
+
+            vt_kpi_data = [[
+                self._kpi_cell(str(len(vt_checked)),    'Files\nChecked',   C['navy']),
+                self._kpi_cell(str(len(vt_malicious)),  'Malicious',
+                               C['crimson'] if vt_malicious else C['green']),
+                self._kpi_cell(str(len(vt_suspicious)), 'Suspicious',
+                               C['amber'] if vt_suspicious else C['green']),
+                self._kpi_cell(str(vt_clean),           'Clean',            C['green']),
+                self._kpi_cell(str(vt_unknown),         'Unknown',          C['slate']),
+            ]]
+            vt_kpi_table = Table(vt_kpi_data,
+                                 colWidths=[1.3*inch]*5,
+                                 rowHeights=[0.85*inch])
+            vt_kpi_table.setStyle(TableStyle([
+                ('TOPPADDING',    (0, 0), (-1, -1), 0),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+                ('LEFTPADDING',   (0, 0), (-1, -1), 3),
+                ('RIGHTPADDING',  (0, 0), (-1, -1), 3),
+            ]))
+            content.append(vt_kpi_table)
+            content.append(_sp(0.15))
+
+            # ── Malicious files — highlighted block ───────────────────────
+            if vt_malicious:
+                content.extend(self._info_box(
+                    f'<b>⚠  {len(vt_malicious)} file(s) confirmed MALICIOUS by '
+                    f'VirusTotal.</b>  These files were flagged by multiple antivirus '
+                    f'engines and require immediate investigation.',
+                    'crimson'))
+
+                mal_rows = [[
+                    Paragraph('<b>Filename</b>',         self.styles['TableHeader']),
+                    Paragraph('<b>SHA-256</b>',          self.styles['TableHeader']),
+                    Paragraph('<b>Detection Ratio</b>',  self.styles['TableHeader']),
+                    Paragraph('<b>Threat Name(s)</b>',   self.styles['TableHeader']),
+                    Paragraph('<b>Last Analysed</b>',    self.styles['TableHeader']),
+                ]]
+                for r in vt_malicious:
+                    sha = r.get('sha256', 'N/A')
+                    sha_display = f'{sha[:20]}…' if len(sha) > 20 else sha
+                    threats = ', '.join(r.get('vt_threat_names', [])[:3]) or '—'
+                    mal_rows.append([
+                        Paragraph(r.get('filename', 'N/A'),
+                                  self.styles['TableCell']),
+                        Paragraph(sha_display,
+                                  ParagraphStyle('mono', parent=self.styles['SmallText'],
+                                                 textColor=C['crimson'])),
+                        Paragraph(f'<b>{r.get("vt_detection_ratio","N/A")}</b>',
+                                  ParagraphStyle('ratio', parent=self.styles['TableCell'],
+                                                 textColor=C['crimson'],
+                                                 fontName='Helvetica-Bold',
+                                                 alignment=TA_CENTER)),
+                        Paragraph(threats,
+                                  ParagraphStyle('thr', parent=self.styles['SmallText'],
+                                                 textColor=C['amber'])),
+                        Paragraph(r.get('vt_last_analysis', 'N/A'),
+                                  self.styles['SmallText']),
+                    ])
+                mal_t = Table(mal_rows,
+                              colWidths=[1.3*inch, 1.4*inch, 0.9*inch,
+                                         1.7*inch, 1.2*inch])
+                mal_t.setStyle(TableStyle([
+                    ('BACKGROUND',    (0, 0), (-1, 0),  C['crimson']),
+                    ('TEXTCOLOR',     (0, 0), (-1, 0),  C['white']),
+                    ('FONTNAME',      (0, 0), (-1, 0),  'Helvetica-Bold'),
+                    ('FONTSIZE',      (0, 0), (-1, -1), 7.5),
+                    ('GRID',          (0, 0), (-1, -1), 0.3, C['border_light']),
+                    ('ROWBACKGROUNDS',(0, 1), (-1, -1),
+                     [C['crimson_light'], C['white']]),
+                    ('TOPPADDING',    (0, 0), (-1, -1), 5),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+                    ('LEFTPADDING',   (0, 0), (-1, -1), 6),
+                    ('LINEBEFORE',    (0, 0), (0, -1),  2, C['crimson']),
+                    ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
+                ]))
+                content.append(mal_t)
+                content.append(_sp(0.12))
+
+            # ── Suspicious files ──────────────────────────────────────────
+            if vt_suspicious:
+                content.extend(self._info_box(
+                    f'<b>{len(vt_suspicious)} file(s) flagged as SUSPICIOUS</b>  '
+                    f'(1–2 engine detections). Manual review is recommended.',
+                    'amber'))
+
+                sus_rows = [[
+                    Paragraph('<b>Filename</b>',        self.styles['TableHeader']),
+                    Paragraph('<b>SHA-256</b>',         self.styles['TableHeader']),
+                    Paragraph('<b>Detection Ratio</b>', self.styles['TableHeader']),
+                    Paragraph('<b>VT Report</b>',       self.styles['TableHeader']),
+                ]]
+                for r in vt_suspicious:
+                    sha = r.get('sha256', 'N/A')
+                    sha_display = f'{sha[:20]}…' if len(sha) > 20 else sha
+                    sus_rows.append([
+                        Paragraph(r.get('filename', 'N/A'),
+                                  self.styles['TableCell']),
+                        Paragraph(sha_display, self.styles['SmallText']),
+                        Paragraph(r.get('vt_detection_ratio', 'N/A'),
+                                  ParagraphStyle('sr', parent=self.styles['TableCell'],
+                                                 textColor=C['amber'],
+                                                 alignment=TA_CENTER)),
+                        Paragraph(r.get('vt_link', 'N/A'),
+                                  ParagraphStyle('lnk', parent=self.styles['SmallText'],
+                                                 textColor=C['teal'])),
+                    ])
+                sus_t = Table(sus_rows,
+                              colWidths=[1.5*inch, 1.5*inch, 0.9*inch, 2.6*inch])
+                sus_t.setStyle(self._base_table_style(header_bg=C['amber']))
+                content.append(sus_t)
+                content.append(_sp(0.12))
+
+            # ── Complete VT results table ──────────────────────────────────
+            content.append(Paragraph(
+                '<b>Complete VirusTotal Results</b>',
+                ParagraphStyle('VTHdr', parent=self.styles['Normal'],
+                               fontSize=9, fontName='Helvetica-Bold',
+                               textColor=C['navy'],
+                               spaceBefore=6, spaceAfter=4)))
+
+            all_vt_rows = [[
+                Paragraph('<b>Filename</b>',    self.styles['TableHeader']),
+                Paragraph('<b>MD5</b>',         self.styles['TableHeader']),
+                Paragraph('<b>Verdict</b>',     self.styles['TableHeader']),
+                Paragraph('<b>Ratio</b>',       self.styles['TableHeader']),
+                Paragraph('<b>Threats</b>',     self.styles['TableHeader']),
+            ]]
+            for r in results:
+                verdict = r.get('vt_verdict', 'SKIPPED')
+                if verdict == 'SKIPPED':
+                    continue
+                v_colour = {
+                    'MALICIOUS':  C['crimson'],
+                    'SUSPICIOUS': C['amber'],
+                    'CLEAN':      C['green'],
+                    'UNKNOWN':    C['slate'],
+                    'ERROR':      C['slate'],
+                }.get(verdict, C['slate'])
+                md5_short = str(r.get('md5', 'N/A'))[:16] + '…'
+                threats   = ', '.join(r.get('vt_threat_names', [])[:2]) or '—'
+                all_vt_rows.append([
+                    Paragraph(r.get('filename', 'N/A'), self.styles['TableCell']),
+                    Paragraph(md5_short, self.styles['SmallText']),
+                    Paragraph(f'<b>{verdict}</b>',
+                              ParagraphStyle('vv', parent=self.styles['TableCell'],
+                                             textColor=v_colour,
+                                             fontName='Helvetica-Bold',
+                                             alignment=TA_CENTER)),
+                    Paragraph(r.get('vt_detection_ratio', 'N/A'),
+                              ParagraphStyle('vr', parent=self.styles['TableCell'],
+                                             alignment=TA_CENTER)),
+                    Paragraph(threats,
+                              ParagraphStyle('vt', parent=self.styles['SmallText'],
+                                             textColor=C['amber']
+                                             if threats != '—' else C['text_muted'])),
+                ])
+
+            if len(all_vt_rows) > 1:
+                avt = Table(all_vt_rows,
+                            colWidths=[1.6*inch, 1.2*inch, 0.85*inch,
+                                       0.7*inch, 2.15*inch])
+                avt.setStyle(self._base_table_style(header_bg=C['navy_mid']))
+                content.append(avt)
+                content.append(_sp(0.18))
+
+        else:
+            # VT was not run — brief note
+            content.extend(self._info_box(
+                'VirusTotal threat intelligence was not enabled for this analysis. '
+                'To activate, set the <b>VIRUSTOTAL_API_KEY</b> environment variable '
+                'and enable the option in the GUI before running.',
+                'teal'))
+
+        # ═════════════════════════════════════════════════════════════════
+        # PART B — DUPLICATE DETECTION (unchanged structure, VT verdict added)
+        # ═════════════════════════════════════════════════════════════════
+        content.append(Paragraph(
+            '<b>Duplicate File Detection</b>',
+            self.styles['SubHeader']))
 
         if duplicates:
             content.extend(self._info_box(
                 f'<b>{len(duplicates)} duplicate set(s) identified.</b>  '
-                f'Each set below lists all files that share the same MD5 hash, '
-                f'their individual file sizes, and their locations.', 'amber'))
+                f'Files sharing an identical MD5 hash are byte-for-byte identical '
+                f'regardless of filename or location. This may indicate data staging, '
+                f'unauthorised copying, or exfiltration activity.',
+                'amber'))
             content.append(_sp(0.08))
 
             for idx, (hash_val, files) in enumerate(duplicates.items(), 1):
+                # Set header — unchanged
                 hdr_data = [[
                     Paragraph(f'<b>Duplicate Set {idx}</b>',
                               ParagraphStyle('DSH', parent=self.styles['Normal'],
                                              fontSize=9, fontName='Helvetica-Bold',
                                              textColor=C['white'])),
-                    Paragraph(f'MD5: {hash_val[:32]}...',
+                    Paragraph(f'MD5: {hash_val[:32]}…',
                               ParagraphStyle('DSH2', parent=self.styles['Normal'],
                                              fontSize=7.5, textColor=C['teal_mid'],
                                              fontName='Helvetica-Oblique')),
@@ -869,28 +1076,47 @@ class ReportGenerator:
                 ]))
                 content.append(hdr_t)
 
-                file_rows = [['Filename', 'Size', 'Path']]
+                # File rows — VT Verdict column added
+                file_rows = [['Filename', 'Size', 'VT Verdict', 'Path']]
                 for f in files:
                     raw_fp   = f.get('filepath', 'N/A')
                     fp_parts = Path(raw_fp).parts
                     short_fp = str(Path(*fp_parts[-2:])) if len(fp_parts) >= 2 else raw_fp
+                    verdict  = f.get('vt_verdict', 'SKIPPED')
+                    v_col    = {
+                        'MALICIOUS':  C['crimson'],
+                        'SUSPICIOUS': C['amber'],
+                        'CLEAN':      C['green'],
+                    }.get(verdict, C['text_muted'])
                     file_rows.append([
                         Paragraph(f['filename'], self.styles['TableCell']),
                         Paragraph(f'{f.get("size_bytes", 0):,} bytes',
-                                  ParagraphStyle('tc_sz', parent=self.styles['TableCell'],
+                                  ParagraphStyle('tc_sz',
+                                                 parent=self.styles['TableCell'],
                                                  alignment=TA_RIGHT)),
+                        Paragraph(verdict,
+                                  ParagraphStyle('tc_vt',
+                                                 parent=self.styles['TableCell'],
+                                                 textColor=v_col,
+                                                 fontName='Helvetica-Bold',
+                                                 alignment=TA_CENTER)),
                         Paragraph(short_fp, self.styles['SmallText']),
                     ])
-                ft = Table(file_rows, colWidths=[2.1*inch, 0.95*inch, 3.45*inch])
+                ft = Table(file_rows,
+                           colWidths=[1.8*inch, 0.85*inch, 0.85*inch, 3.0*inch])
                 ft.setStyle(self._base_table_style(header_bg=C['slate']))
                 content.append(ft)
                 content.append(_sp(0.15))
+
         else:
             content.extend(self._info_box(
                 'No duplicate files detected. Every file in the analysis set '
-                'produces a unique cryptographic hash value.', 'green'))
+                'produces a unique cryptographic hash value.',
+                'green'))
 
         return content
+
+
 
     # ═══════════════════════════════════════════════════════════════════════════
     # METADATA SECTION (with ForensicIntelligence)

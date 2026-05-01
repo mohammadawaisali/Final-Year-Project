@@ -105,21 +105,34 @@ class ForensicVisualizer:
 
     # ─────────────────────────────────────────────────────────────────────────
     # FIGURE 1 — Detection Summary Dashboard
+    # Updated: statistics table and bar chart now reflect VT results when
+    # VirusTotal was enabled. No new figures or axes are added; only the
+    # existing statistics table and bar chart are extended.
     # ─────────────────────────────────────────────────────────────────────────
     def generate_detection_summary(self, signature_results, entropy_results,
                                    hash_results, metadata_results,
                                    output_filename='detection_summary.png'):
         try:
-            total   = len(hash_results)
-            sig_s   = sum(1 for r in signature_results if r.get('mismatch'))
-            ent_s   = sum(1 for r in entropy_results   if r.get('high_entropy'))
-            meta_s  = sum(1 for r in metadata_results  if r.get('status') == 'suspicious')
+            total  = len(hash_results)
+            sig_s  = sum(1 for r in signature_results if r.get('mismatch'))
+            ent_s  = sum(1 for r in entropy_results   if r.get('high_entropy'))
+            meta_s = sum(1 for r in metadata_results  if r.get('status') == 'suspicious')
 
             seen, dups = set(), 0
             for r in hash_results:
                 h = r.get('md5')
                 if h in seen: dups += 1
                 seen.add(h)
+
+            # ── VirusTotal counts (new) ───────────────────────────────────
+            # Extracted directly from hash_results — no new API calls.
+            vt_malicious  = sum(1 for r in hash_results
+                                if r.get('vt_verdict') == 'MALICIOUS')
+            vt_suspicious = sum(1 for r in hash_results
+                                if r.get('vt_verdict') == 'SUSPICIOUS')
+            vt_was_run    = any(
+                r.get('vt_verdict') not in (None, 'SKIPPED', 'ERROR')
+                for r in hash_results)
 
             fig = plt.figure(figsize=(14, 9))
             fig.suptitle('Forensic Analysis Summary Dashboard',
@@ -131,7 +144,7 @@ class ForensicVisualizer:
                                    left=0.06, right=0.97,
                                    top=0.90, bottom=0.08)
 
-            # ── Row 0: three donut charts ─────────────────────────────────
+            # ── Row 0: three donut charts (unchanged) ─────────────────────
             donut_specs = [
                 ('File Signatures',  sig_s,  total - sig_s,  'Mismatched', 'Clean'),
                 ('Entropy Analysis', ent_s,  total - ent_s,  'High Entropy', 'Normal'),
@@ -148,7 +161,6 @@ class ForensicVisualizer:
                                 'edgecolor': P['white']},
                     counterclock=False
                 )
-                # Centre label
                 pct = f'{bad/total*100:.1f}%' if total > 0 else '0%'
                 ax.text(0, 0.08, str(bad),
                         ha='center', va='center',
@@ -159,30 +171,38 @@ class ForensicVisualizer:
                         fontsize=9, color=P['text_muted'])
                 ax.set_title(title, fontsize=10, fontweight='bold',
                              color=P['navy'], pad=6)
-                # Legend
                 patches = [
-                    mpatches.Patch(color=P['amber'], label=f'{bad_lbl} ({bad})'),
-                    mpatches.Patch(color=P['teal_mid'], label=f'{good_lbl} ({good})'),
+                    mpatches.Patch(color=P['amber'],   label=f'{bad_lbl} ({bad})'),
+                    mpatches.Patch(color=P['teal_mid'],label=f'{good_lbl} ({good})'),
                 ]
                 ax.legend(handles=patches, loc='lower center',
                           bbox_to_anchor=(0.5, -0.22),
                           ncol=1, frameon=False, fontsize=8)
 
             # ── Row 1, col 0-1: horizontal bar chart ──────────────────────
+            # Updated: adds VT Malicious bar when VT was run.
             ax_bar = fig.add_subplot(gs[1, :2])
-            categories = ['Signature\nMismatches', 'High\nEntropy',
-                          'Duplicates', 'Metadata\nAnomalies']
-            counts     = [sig_s, ent_s, dups, meta_s]
-            bar_colors = [P['crimson'], P['amber'], P['navy_mid'], P['teal']]
+
+            if vt_was_run:
+                categories = ['Signature\nMismatches', 'High\nEntropy',
+                              'Duplicates', 'Metadata\nAnomalies',
+                              'VT\nMalicious']
+                counts     = [sig_s, ent_s, dups, meta_s, vt_malicious]
+                bar_colors = [P['crimson'], P['amber'], P['navy_mid'],
+                              P['teal'],   P['crimson']]
+            else:
+                categories = ['Signature\nMismatches', 'High\nEntropy',
+                              'Duplicates', 'Metadata\nAnomalies']
+                counts     = [sig_s, ent_s, dups, meta_s]
+                bar_colors = [P['crimson'], P['amber'], P['navy_mid'], P['teal']]
 
             y_pos = np.arange(len(categories))
             bars  = ax_bar.barh(y_pos, counts, color=bar_colors,
                                 height=0.55, edgecolor=P['white'],
                                 linewidth=0.8)
-
-            # Value labels
+            max_c = max(counts) if max(counts) > 0 else 1
             for bar, val in zip(bars, counts):
-                ax_bar.text(bar.get_width() + max(counts) * 0.02,
+                ax_bar.text(bar.get_width() + max_c * 0.02,
                             bar.get_y() + bar.get_height() / 2,
                             str(val), va='center', fontsize=10,
                             fontweight='bold', color=P['text'])
@@ -190,34 +210,53 @@ class ForensicVisualizer:
             ax_bar.set_yticks(y_pos)
             ax_bar.set_yticklabels(categories, fontsize=9)
             ax_bar.set_xlabel('Files Flagged', color=P['slate'])
-            ax_bar.set_xlim(0, max(counts) * 1.25 if max(counts) else 1)
+            ax_bar.set_xlim(0, max_c * 1.25)
             ax_bar.invert_yaxis()
             ax_bar.grid(axis='x', linestyle='--', alpha=0.5)
             _navy_spine(ax_bar)
             _section_title(ax_bar, 'Suspicious Files by Detection Method')
 
             # ── Row 1, col 2: statistics table ────────────────────────────
+            # Updated: adds VT rows when VT was run.
             ax_tbl = fig.add_subplot(gs[1, 2])
             ax_tbl.axis('off')
 
             tbl_data = [
-                ['Metric',              'Count'],
-                ['Total Files',         str(total)],
-                ['Signature Mismatches',str(sig_s)],
-                ['High Entropy Files',  str(ent_s)],
-                ['Duplicate Files',     str(dups)],
-                ['Metadata Anomalies',  str(meta_s)],
-                ['Total Flags',         str(sig_s + ent_s + dups + meta_s)],
+                ['Metric',               'Count'],
+                ['Total Files',          str(total)],
+                ['Signature Mismatches', str(sig_s)],
+                ['High Entropy Files',   str(ent_s)],
+                ['Duplicate Files',      str(dups)],
+                ['Metadata Anomalies',   str(meta_s)],
+                ['Total Flags',          str(sig_s + ent_s + dups + meta_s)],
             ]
             row_colors = [
-                [P['navy'],      P['navy']],
+                [P['navy'],        P['navy']],
                 [P['slate_light'], P['white']],
-                [P['white'],      P['slate_light']],
+                [P['white'],       P['slate_light']],
                 [P['slate_light'], P['white']],
-                [P['white'],      P['slate_light']],
+                [P['white'],       P['slate_light']],
                 [P['slate_light'], P['white']],
                 [P['amber_light'], P['amber_light']],
             ]
+
+            # Append VT rows when available
+            if vt_was_run:
+                tbl_data.extend([
+                    ['─── VirusTotal ───', ''],
+                    ['VT Malicious',      str(vt_malicious)],
+                    ['VT Suspicious',     str(vt_suspicious)],
+                ])
+                row_colors.extend([
+                    [P['navy_mid'],    P['navy_mid']],
+                    [P['crimson_light'], P['crimson_light']
+                     if vt_malicious else P['white']],
+                    [P['amber_light'], P['amber_light']
+                     if vt_suspicious else P['white']],
+                ])
+
+            scale_y = 1.55 if vt_was_run else 1.9
+
             tbl = ax_tbl.table(
                 cellText=tbl_data, cellLoc='left',
                 loc='center', cellColours=row_colors,
@@ -225,13 +264,28 @@ class ForensicVisualizer:
             )
             tbl.auto_set_font_size(False)
             tbl.set_fontsize(9)
-            tbl.scale(1, 1.9)
-            # Header text white, total text bold
+            tbl.scale(1, scale_y)
+
+            # Style header row (row 0) and totals row (row 6)
             for col in range(2):
                 tbl[(0, col)].get_text().set_color(P['white'])
                 tbl[(0, col)].get_text().set_fontweight('bold')
                 tbl[(6, col)].get_text().set_fontweight('bold')
                 tbl[(6, col)].get_text().set_color(P['amber'])
+
+            # Style VT section header and value rows
+            if vt_was_run:
+                tbl[(7, 0)].get_text().set_color(P['white'])
+                tbl[(7, 0)].get_text().set_fontweight('bold')
+                tbl[(7, 1)].get_text().set_color(P['white'])
+                if vt_malicious:
+                    tbl[(8, 0)].get_text().set_color(P['crimson'])
+                    tbl[(8, 1)].get_text().set_fontweight('bold')
+                    tbl[(8, 1)].get_text().set_color(P['crimson'])
+                if vt_suspicious:
+                    tbl[(9, 0)].get_text().set_color(P['amber'])
+                    tbl[(9, 1)].get_text().set_color(P['amber'])
+
             ax_tbl.set_title('Analysis Statistics', fontsize=10,
                              fontweight='bold', color=P['navy'],
                              loc='left', pad=6)
@@ -247,7 +301,7 @@ class ForensicVisualizer:
             return None
 
     # ─────────────────────────────────────────────────────────────────────────
-    # FIGURE 2 — Entropy Distribution (horizontal, scales with file count)
+    # FIGURE 2 — Entropy Distribution (unchanged)
     # ─────────────────────────────────────────────────────────────────────────
     def generate_entropy_histogram(self, entropy_results,
                                    output_filename='entropy_histogram.png'):
@@ -256,7 +310,6 @@ class ForensicVisualizer:
                 print('[WARN] No entropy data')
                 return None
 
-            # Sort: suspicious first, then by entropy descending
             results = sorted(
                 [r for r in entropy_results if 'entropy' in r],
                 key=lambda r: (not r.get('high_entropy', False),
@@ -264,7 +317,6 @@ class ForensicVisualizer:
             )
             n = len(results)
 
-            # Dynamic figure height: 0.42 inches per file, min 5, max 18
             fig_h = max(5, min(18, n * 0.42 + 2.2))
             fig, ax = plt.subplots(figsize=(11, fig_h))
 
@@ -278,42 +330,43 @@ class ForensicVisualizer:
                            height=0.62, edgecolor=P['white'],
                            linewidth=0.6, alpha=0.9)
 
-            # Threshold line
             threshold = 7.5
             ax.axvline(threshold, color=P['amber'], linewidth=1.8,
-                       linestyle='--', zorder=5, label=f'Threshold ({threshold})')
+                       linestyle='--', zorder=5,
+                       label=f'Threshold ({threshold})')
 
-            # Value labels — only show if entropy != 0
             for bar, val in zip(bars, values):
                 if val > 0.05:
-                    x_pos = bar.get_width() + 0.04
-                    ax.text(x_pos, bar.get_y() + bar.get_height() / 2,
+                    ax.text(bar.get_width() + 0.04,
+                            bar.get_y() + bar.get_height() / 2,
                             f'{val:.3f}', va='center', fontsize=7.5,
                             color=P['text'], clip_on=True)
 
-            # Shade high-entropy region
-            ax.axvspan(threshold, 8.1, alpha=0.06, color=P['crimson'], zorder=0)
+            ax.axvspan(threshold, 8.1, alpha=0.06,
+                       color=P['crimson'], zorder=0)
 
             ax.set_yticks(y_pos)
             ax.set_yticklabels(labels, fontsize=8)
-            ax.set_xlabel('Shannon Entropy Value  (0 = uniform, 8 = maximum randomness)',
-                          color=P['slate'], fontsize=9)
+            ax.set_xlabel(
+                'Shannon Entropy Value  (0 = uniform, 8 = maximum randomness)',
+                color=P['slate'], fontsize=9)
             ax.set_xlim(0, 8.4)
             ax.invert_yaxis()
             ax.grid(axis='x', linestyle='--', alpha=0.4)
             _navy_spine(ax)
 
-            # Stripe suspicious rows
             for i, r in enumerate(results):
                 if r.get('high_entropy'):
                     ax.axhspan(i - 0.45, i + 0.45,
-                               color=P['crimson_light'], alpha=0.35, zorder=0)
+                               color=P['crimson_light'],
+                               alpha=0.35, zorder=0)
 
             legend_handles = [
                 mpatches.Patch(color=P['teal'],    label='Normal Entropy'),
                 mpatches.Patch(color=P['crimson'], label='High Entropy — Suspicious'),
                 Line2D([0], [0], color=P['amber'],  linewidth=1.8,
-                       linestyle='--', label=f'Detection Threshold ({threshold})'),
+                       linestyle='--',
+                       label=f'Detection Threshold ({threshold})'),
             ]
             ax.legend(handles=legend_handles, loc='lower right',
                       framealpha=0.95, fontsize=8.5)
@@ -321,9 +374,9 @@ class ForensicVisualizer:
             n_high = sum(1 for r in results if r.get('high_entropy'))
             _section_title(ax,
                            'File Entropy Analysis',
-                           f'{n_high} of {n} files exceed the {threshold} threshold')
+                           f'{n_high} of {n} files exceed the '
+                           f'{threshold} threshold')
 
-            # Compact spacing
             fig.tight_layout(pad=1.4)
             out = os.path.join(self.output_dir, output_filename)
             plt.savefig(out)
@@ -336,7 +389,7 @@ class ForensicVisualizer:
             return None
 
     # ─────────────────────────────────────────────────────────────────────────
-    # FIGURE 3 — Forensic Timeline (two-panel, compact)
+    # FIGURE 3 — Forensic Timeline (unchanged)
     # ─────────────────────────────────────────────────────────────────────────
     def generate_timeline_chart(self, metadata_results,
                                 output_filename='timeline_chart.png'):
@@ -344,7 +397,6 @@ class ForensicVisualizer:
             from datetime import datetime
             import matplotlib.dates as mdates
 
-            # ── Collect data ──────────────────────────────────────────────
             fs_data  = []
             gap_data = []
 
@@ -352,18 +404,18 @@ class ForensicVisualizer:
                 fs_ts = r.get('fs_timestamps', {})
                 if not fs_ts or 'created' not in fs_ts:
                     continue
-                created  = fs_ts.get('created')
-                modified = fs_ts.get('modified')
-                fname    = r['filename'][:36]
-                status   = r.get('status', 'normal')
+                created    = fs_ts.get('created')
+                modified   = fs_ts.get('modified')
+                fname      = r['filename'][:36]
+                status     = r.get('status', 'normal')
                 impossible = (created and modified and created > modified)
 
                 fs_data.append({
-                    'filename':    fname,
-                    'created':     created,
-                    'modified':    modified,
-                    'suspicious':  status == 'suspicious',
-                    'impossible':  impossible,
+                    'filename':   fname,
+                    'created':    created,
+                    'modified':   modified,
+                    'suspicious': status == 'suspicious',
+                    'impossible': impossible,
                 })
 
                 for ind in r.get('suspicious_indicators', []):
@@ -372,8 +424,8 @@ class ForensicVisualizer:
                             days = int(''.join(filter(str.isdigit, ind)))
                             if days > 1:
                                 gap_data.append({
-                                    'filename':  fname,
-                                    'days_gap':  days,
+                                    'filename':   fname,
+                                    'days_gap':   days,
                                     'suspicious': status == 'suspicious',
                                 })
                         except ValueError:
@@ -387,10 +439,9 @@ class ForensicVisualizer:
             has_gaps = len(gap_data) > 0
             n_fs     = len(fs_data)
 
-            # ── Figure layout ─────────────────────────────────────────────
-            # Panel 1 height: 0.38 per file, capped at 8.5 inches
-            p1_h = min(8.5, max(3.5, n_fs * 0.38))
-            p2_h = min(4.0, max(2.0, len(gap_data) * 0.42 + 1.2)) if has_gaps else 0
+            p1_h    = min(8.5, max(3.5, n_fs * 0.38))
+            p2_h    = min(4.0, max(2.0, len(gap_data) * 0.42 + 1.2)) \
+                      if has_gaps else 0
             total_h = p1_h + (p2_h + 0.8 if has_gaps else 0) + 1.2
 
             fig = plt.figure(figsize=(13, total_h))
@@ -405,8 +456,7 @@ class ForensicVisualizer:
                     hspace=0.55,
                     left=0.22, right=0.96,
                     top=1.0 - 0.6 / total_h,
-                    bottom=0.5 / total_h
-                )
+                    bottom=0.5 / total_h)
                 ax1 = fig.add_subplot(gs[0])
                 ax2 = fig.add_subplot(gs[1])
             else:
@@ -414,18 +464,15 @@ class ForensicVisualizer:
                     1, 1, figure=fig,
                     left=0.22, right=0.96,
                     top=1.0 - 0.6 / total_h,
-                    bottom=0.5 / total_h
-                )
+                    bottom=0.5 / total_h)
                 ax1 = fig.add_subplot(gs[0])
                 ax2 = None
 
-            # ── Panel 1: Filesystem timestamps ────────────────────────────
             ax1.set_facecolor(P['white'])
             _navy_spine(ax1)
 
-            # Sort by created date
-            fs_data.sort(key=lambda x: x['created'] if x['created'] else
-                         datetime(2000, 1, 1))
+            fs_data.sort(key=lambda x: x['created'] if x['created']
+                         else datetime(2000, 1, 1))
             y_pos = np.arange(len(fs_data))
 
             for i, d in enumerate(fs_data):
@@ -437,44 +484,34 @@ class ForensicVisualizer:
                 same = (modified and
                         abs((modified - created).total_seconds()) < 2)
 
-                # Line colour
-                if d['impossible']:
-                    lcol = P['crimson']
-                elif d['suspicious']:
-                    lcol = P['amber']
-                else:
-                    lcol = P['teal']
+                lcol = (P['crimson'] if d['impossible']
+                        else P['amber'] if d['suspicious']
+                        else P['teal'])
 
-                # Span line (only if timestamps differ)
                 if modified and not same:
                     ax1.plot([created, modified], [i, i],
                              color=lcol, linewidth=2.5,
                              alpha=0.6, solid_capstyle='round', zorder=2)
 
-                # Created marker
                 ax1.scatter([created], [i],
                             color=P['green_mid'], s=50, zorder=4,
                             marker='o', edgecolors=P['green'],
                             linewidths=1.2)
 
-                # Modified (only if different)
                 if modified and not same:
                     ax1.scatter([modified], [i],
                                 color=P['amber_mid'], s=50, zorder=4,
                                 marker='D', edgecolors=P['amber'],
                                 linewidths=1.2)
 
-                # Flag impossible timestamp
                 if d['impossible']:
                     ax1.annotate(
                         ' Created > Modified',
                         xy=(created, i),
                         xytext=(5, 0), textcoords='offset points',
                         fontsize=7, color=P['crimson'],
-                        fontweight='bold', va='center'
-                    )
+                        fontweight='bold', va='center')
 
-                # Subtle row stripe for suspicious
                 if d['suspicious'] or d['impossible']:
                     ax1.axhspan(i - 0.45, i + 0.45,
                                 color=P['crimson_light'],
@@ -486,7 +523,6 @@ class ForensicVisualizer:
             ax1.invert_yaxis()
             ax1.set_xlabel('Date / Time', color=P['slate'], fontsize=9)
 
-            # Smart x-axis format
             all_dates = [d['created'] for d in fs_data if d['created']]
             if all_dates:
                 span = (max(all_dates) - min(all_dates)).days
@@ -503,14 +539,13 @@ class ForensicVisualizer:
                      rotation=25, ha='right', fontsize=8)
             ax1.grid(axis='x', linestyle='--', alpha=0.4)
 
-            # Count anomalies for subtitle
-            n_anom = sum(1 for d in fs_data if d['suspicious'] or d['impossible'])
+            n_anom = sum(1 for d in fs_data
+                         if d['suspicious'] or d['impossible'])
             _section_title(ax1,
                            'Panel 1 — File System Timestamps',
                            f'Creation & modification times  |  '
                            f'{n_anom} file(s) with timestamp anomalies')
 
-            # Legend
             leg = [
                 Line2D([0], [0], marker='o', color='w',
                        markerfacecolor=P['green_mid'], markersize=8,
@@ -518,15 +553,14 @@ class ForensicVisualizer:
                 Line2D([0], [0], marker='D', color='w',
                        markerfacecolor=P['amber_mid'], markersize=8,
                        markeredgecolor=P['amber'], label='Modified'),
-                mpatches.Patch(color=P['teal'],   alpha=0.7, label='Normal file'),
-                mpatches.Patch(color=P['amber'],  alpha=0.7, label='Suspicious file'),
-                mpatches.Patch(color=P['crimson'],alpha=0.7,
+                mpatches.Patch(color=P['teal'],    alpha=0.7, label='Normal file'),
+                mpatches.Patch(color=P['amber'],   alpha=0.7, label='Suspicious file'),
+                mpatches.Patch(color=P['crimson'], alpha=0.7,
                                label='Impossible timestamp'),
             ]
             ax1.legend(handles=leg, loc='lower right', fontsize=7.5,
                        framealpha=0.95)
 
-            # ── Panel 2: Metadata timestamp discrepancy ───────────────────
             if ax2 is not None and gap_data:
                 ax2.set_facecolor(P['white'])
                 _navy_spine(ax2)
@@ -542,7 +576,6 @@ class ForensicVisualizer:
                                 height=0.58, edgecolor=P['white'],
                                 linewidth=0.6, alpha=0.88)
 
-                # Value labels
                 mx = max(g_vals) if g_vals else 1
                 for bar, val in zip(bars, g_vals):
                     yrs = val / 365.25
@@ -551,10 +584,9 @@ class ForensicVisualizer:
                              f'{val:,} days  ({yrs:.1f} yrs)',
                              va='center', fontsize=7.5, color=P['text'])
 
-                # Reference lines
                 for days, lbl, col in [
-                    (365,  '1 yr',  P['text_muted']),
-                    (1825, '5 yrs', P['slate']),
+                    (365,  '1 yr',   P['text_muted']),
+                    (1825, '5 yrs',  P['slate']),
                     (3650, '10 yrs', P['navy_mid']),
                 ]:
                     if days < mx * 1.3:
@@ -579,9 +611,9 @@ class ForensicVisualizer:
                                'Embedded document date vs actual file system date')
 
                 leg2 = [
-                    mpatches.Patch(color=P['crimson'],  alpha=0.88,
+                    mpatches.Patch(color=P['crimson'],   alpha=0.88,
                                    label='Suspicious file'),
-                    mpatches.Patch(color=P['amber_mid'],alpha=0.88,
+                    mpatches.Patch(color=P['amber_mid'], alpha=0.88,
                                    label='Normal / low-risk file'),
                 ]
                 ax2.legend(handles=leg2, loc='lower right',

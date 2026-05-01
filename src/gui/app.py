@@ -26,6 +26,8 @@ class ForensicApp(ctk.CTk):
             "meta_results":  [],
             "graph_paths":   {},
             "report_path":   None,
+            "vt_summary":    {},       
+            "vt_enabled":    False,     
             "last_run":      None,
         }
 
