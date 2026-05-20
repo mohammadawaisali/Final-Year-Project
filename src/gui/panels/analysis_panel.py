@@ -372,7 +372,7 @@ class AnalysisPanel(ctk.CTkFrame):
             log("[DONE] Analysis complete.")
             self.after(0, lambda: self._progress.complete(
                 "Complete — navigate to Results or Export Report."))
-            status("✅  Analysis complete.")
+            status("  Analysis complete.")
             self.after(900, lambda: self.app._show_panel("results"))
 
         except Exception as e:
@@ -381,7 +381,7 @@ class AnalysisPanel(ctk.CTkFrame):
             log(traceback.format_exc())
             self.after(0, lambda err=str(e): self._progress.error(
                 f"Error: {err}"))
-            status(f"❌  Error: {e}")
+            status(f"  Error: {e}")
 
         finally:
             self.after(0, lambda: self._run_btn.configure(

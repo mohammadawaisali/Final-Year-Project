@@ -392,7 +392,7 @@ class ForensicIntelligence:
             'timestamp_impossible' in anomaly_types) and \
            'author_mismatch' in anomaly_types:
             findings.append(
-                "⚠️ CORRELATION: Timestamp anomaly combined with author mismatch "
+                " CORRELATION: Timestamp anomaly combined with author mismatch "
                 "suggests possible document backdating or metadata manipulation"
             )
         
@@ -401,21 +401,21 @@ class ForensicIntelligence:
                               if 'timestamp' in a['type']]
         if len(timestamp_anomalies) >= 2:
             findings.append(
-                f"⚠️ CORRELATION: Multiple timestamp anomalies ({len(timestamp_anomalies)}) "
+                f" CORRELATION: Multiple timestamp anomalies ({len(timestamp_anomalies)}) "
                 "increase likelihood of deliberate manipulation"
             )
         
         # Pattern 3: Metadata stripping + Unusual application
         if 'metadata_stripped' in anomaly_types and 'unusual_application' in anomaly_types:
             findings.append(
-                "⚠️ CORRELATION: Metadata removal combined with unusual creation tool "
+                " CORRELATION: Metadata removal combined with unusual creation tool "
                 "may indicate anti-forensic activity"
             )
         
         # Pattern 4: No concerning correlations
         if not findings and classified_anomalies:
             findings.append(
-                "✓ No significant correlation between anomalies detected. "
+                " No significant correlation between anomalies detected. "
                 "Findings appear independent and may be benign."
             )
         

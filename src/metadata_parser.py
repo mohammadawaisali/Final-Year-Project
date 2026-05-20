@@ -510,10 +510,10 @@ class MetadataParser:
         print(f"Files with Metadata: {files_with_metadata}")
         
         print(f"\nRisk Distribution:")
-        print(f"  ✓ Normal: {risk_distribution['normal']}")
-        print(f"  ℹ️  Low Risk: {risk_distribution['low_risk']}")
-        print(f"  ⚠️  Suspicious: {risk_distribution['suspicious']}")
-        print(f"  🚨 Highly Suspicious: {risk_distribution['highly_suspicious']}")
+        print(f"   Normal: {risk_distribution['normal']}")
+        print(f"    Low Risk: {risk_distribution['low_risk']}")
+        print(f"    Suspicious: {risk_distribution['suspicious']}")
+        print(f"   Highly Suspicious: {risk_distribution['highly_suspicious']}")
         
         # Detailed findings
         print("\n" + "-"*70)

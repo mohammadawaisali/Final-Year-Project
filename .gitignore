@@ -20,10 +20,6 @@ reports/
 .vscode/
 .idea/
 
-# Test files / sample data (optional — remove if you want them tracked)
-test_files/
-advanced_scenarios/
-
 # Sensitive data
 *.key
 *.env
