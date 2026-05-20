@@ -15,7 +15,7 @@ methods and produces professional PDF reports suitable for legal submission.
 |--------|--------|-----------------|
 | `signature_analyzer.py` | Magic byte inspection | File type obfuscation |
 | `entropy_calculator.py` | Shannon entropy (threshold 7.5) | Encryption / steganography |
-| `hash_verifier.py` | MD5 fingerprinting | Duplicates / data staging |
+| `hash_verifier.py` | MD5, SHA1, SHA256 fingerprinting | Duplicates / data staging / VirusTotal|
 | `metadata_parser.py` | EXIF / Office XML / PDF metadata | Timestamp manipulation |
 
 ## Installation
